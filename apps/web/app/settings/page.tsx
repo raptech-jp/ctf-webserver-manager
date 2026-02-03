@@ -104,9 +104,9 @@ export default function SettingsPage() {
           <p className="text-sm font-mono uppercase tracking-[0.3em] text-zinc-500">
             Settings
           </p>
-          <h1 className="text-3xl font-semibold text-zinc-900">Port Ranges</h1>
+          <h1 className="text-3xl font-semibold text-zinc-900">Settings</h1>
           <p className="mt-2 text-sm text-zinc-600">
-            空きポート探索に利用する範囲を指定します。
+            起動設定とMySQL認証情報をまとめて管理します。
           </p>
         </div>
         <Link
@@ -129,6 +129,12 @@ export default function SettingsPage() {
       )}
 
       <section className="rounded-3xl border border-zinc-200 bg-white/80 p-6 shadow-sm">
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-zinc-900">Port Ranges</h2>
+          <p className="mt-1 text-sm text-zinc-600">
+            空きポート探索に利用する範囲を指定します。
+          </p>
+        </div>
         <div className="space-y-4">
           {ranges.map((range, index) => (
             <div key={`${range.start}-${range.end}-${index}`} className="flex flex-wrap gap-3">
