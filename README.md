@@ -1,4 +1,4 @@
-# CTF Web Launcher (MVP)
+# CTF Webserver Manager
 
 CTF Web問題をGUIで簡単に起動・停止できるローカルランチャーです。ZIPを登録し、ランタイムとDBを選ぶと空きポートを割り当ててDocker Composeで起動します。
 
