@@ -11,6 +11,10 @@ type PortRange = {
 
 export default function SettingsPage() {
   const [ranges, setRanges] = useState<PortRange[]>([]);
+  const [mysqlRootPassword, setMysqlRootPassword] = useState("");
+  const [mysqlDatabase, setMysqlDatabase] = useState("ctf");
+  const [mysqlUser, setMysqlUser] = useState("root");
+  const [mysqlPassword, setMysqlPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -18,7 +22,13 @@ export default function SettingsPage() {
   useEffect(() => {
     fetch(`${AGENT_URL}/settings`)
       .then((res) => res.json())
-      .then((data) => setRanges(data.port_ranges ?? []))
+      .then((data) => {
+        setRanges(data.port_ranges ?? []);
+        setMysqlRootPassword(data.mysql_root_password ?? "");
+        setMysqlDatabase(data.mysql_database ?? "ctf");
+        setMysqlUser(data.mysql_user ?? "root");
+        setMysqlPassword(data.mysql_password ?? "");
+      })
       .catch(() => setError("設定の取得に失敗しました"));
   }, []);
 
@@ -44,7 +54,13 @@ export default function SettingsPage() {
       const response = await fetch(`${AGENT_URL}/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ port_ranges: ranges }),
+        body: JSON.stringify({
+          port_ranges: ranges,
+          mysql_root_password: mysqlRootPassword,
+          mysql_database: mysqlDatabase,
+          mysql_user: mysqlUser,
+          mysql_password: mysqlUser === "root" ? mysqlRootPassword : mysqlPassword,
+        }),
       });
       if (!response.ok) {
         const data = (await response.json()) as { error?: string };
@@ -135,6 +151,59 @@ export default function SettingsPage() {
             Save
           </button>
         </div>
+      </section>
+
+      <section className="mt-6 rounded-3xl border border-zinc-200 bg-white/80 p-6 shadow-sm">
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-zinc-900">MySQL</h2>
+          <p className="mt-1 text-sm text-zinc-600">
+            ChallengeでMySQLを選択した場合に使用される認証情報です。
+          </p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="flex flex-col text-sm">
+            <span className="text-xs uppercase tracking-wide text-zinc-500">Root Password</span>
+            <input
+              type="text"
+              value={mysqlRootPassword}
+              onChange={(event) => setMysqlRootPassword(event.target.value)}
+              className="rounded-2xl border border-zinc-200 bg-white px-3 py-2"
+            />
+          </label>
+          <label className="flex flex-col text-sm">
+            <span className="text-xs uppercase tracking-wide text-zinc-500">Database</span>
+            <input
+              type="text"
+              value={mysqlDatabase}
+              onChange={(event) => setMysqlDatabase(event.target.value)}
+              className="rounded-2xl border border-zinc-200 bg-white px-3 py-2"
+            />
+          </label>
+          <label className="flex flex-col text-sm">
+            <span className="text-xs uppercase tracking-wide text-zinc-500">Username</span>
+            <input
+              type="text"
+              value={mysqlUser}
+              onChange={(event) => setMysqlUser(event.target.value)}
+              className="rounded-2xl border border-zinc-200 bg-white px-3 py-2"
+            />
+          </label>
+          <label className="flex flex-col text-sm">
+            <span className="text-xs uppercase tracking-wide text-zinc-500">Password</span>
+            <input
+              type="text"
+              value={mysqlUser === "root" ? mysqlRootPassword : mysqlPassword}
+              onChange={(event) => setMysqlPassword(event.target.value)}
+              disabled={mysqlUser === "root"}
+              className={`rounded-2xl border border-zinc-200 px-3 py-2 ${
+                mysqlUser === "root" ? "bg-zinc-100 text-zinc-400" : "bg-white"
+              }`}
+            />
+          </label>
+        </div>
+        <p className="mt-3 text-xs text-zinc-500">
+          Usernameが <span className="font-mono">root</span> の場合、PasswordはRoot Passwordと同一になります。
+        </p>
       </section>
     </div>
   );

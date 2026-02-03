@@ -28,6 +28,7 @@ apps/agent/*.tsbuildinfo
 # misc
 .DS_Store
 *.pem
+.appdata
 
 # debug
 npm-debug.log*

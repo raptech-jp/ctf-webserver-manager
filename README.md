@@ -37,10 +37,9 @@ macOS/Linux では `scripts/dev.sh`、Windows では `scripts/dev.ps1` も利用
 1. **Delete** でインスタンスを削除
 1. **Export** で challenge-pack.zip を出力
 
-### インスタンス仕様
+### インスタンスについて
 
 - 1つのChallengeに対してインスタンスは1つのみです。
-- 起動中はStartが無効になります。
 
 ### ZIPの配置ルール (PHP)
 
@@ -76,13 +75,31 @@ files/
 
 `manifest.json` はAgentが生成します。
 
+## MySQL (CTF問題用DB)
+
+ChallengeのDBを `mysql` にすると、インスタンス起動時にMySQLコンテナが起動します。
+ZIPに `db/init.sql` があれば初期データとして自動投入されます。
+認証情報は **Settings画面** で変更できます。
+
+```
+your-challenge.zip
+├─ index.php / index.html / app.py など
+└─ db/
+   └─ init.sql
+```
+
+### MySQL接続情報
+
+- Host: `db`
+- User: Settings画面の `Username`
+- Password: Settings画面の `Password` (Usernameが`root`の場合はRoot Passwordと同一)
+- Database: Settings画面の `Database`
+
+実際に使われた値は `./.appdata/ctf-web-launcher/storage/workdirs/<instance_id>/secrets.json` に保存されます。
+
 ## データ保存先
 
-AgentはOSごとのアプリデータ配下に保存します。
-
-- macOS: `~/Library/Application Support/ctf-web-launcher`
-- Windows: `%APPDATA%\ctf-web-launcher`
-- Linux: `~/.local/share/ctf-web-launcher` (または `XDG_DATA_HOME`)
+- このディレクトリ内に保存されます
 
 ## 環境変数
 

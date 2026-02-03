@@ -24,7 +24,7 @@ import {
   deleteChallenge,
   deleteInstancesByChallenge,
 } from "./db";
-import type { DbType, Manifest, PortRange, Runtime } from "./types";
+import type { DbType, Manifest, PortRange, Runtime, Settings } from "./types";
 import { extractZipSafe, saveStreamToFile } from "./zip";
 import { hashDirectory } from "./hash";
 import { findAvailablePort, isPortAvailable } from "./ports";
@@ -147,7 +147,14 @@ function getComposeFilePath(workdir: string): string {
   return path.join(workdir, "compose", "docker-compose.yml");
 }
 
-async function readMysqlPassword(workdir: string): Promise<string | null> {
+type MysqlSecrets = {
+  mysql_root_password: string;
+  mysql_database: string;
+  mysql_user: string;
+  mysql_password: string;
+};
+
+async function readMysqlSecretsFile(workdir: string): Promise<Partial<MysqlSecrets> | null> {
   const secretPath = path.join(workdir, "secrets.json");
   const exists = await fs
     .stat(secretPath)
@@ -157,8 +164,36 @@ async function readMysqlPassword(workdir: string): Promise<string | null> {
     return null;
   }
   const content = await fs.readFile(secretPath, "utf8");
-  const parsed = JSON.parse(content) as { mysql_root_password?: string };
-  return parsed.mysql_root_password ?? null;
+  return JSON.parse(content) as Partial<MysqlSecrets>;
+}
+
+async function writeMysqlSecrets(workdir: string, secrets: MysqlSecrets): Promise<void> {
+  await fs.writeFile(path.join(workdir, "secrets.json"), JSON.stringify(secrets, null, 2), "utf8");
+}
+
+function getMysqlSettings(settings: Settings): MysqlSecrets {
+  return {
+    mysql_root_password: settings.mysql_root_password,
+    mysql_database: settings.mysql_database,
+    mysql_user: settings.mysql_user,
+    mysql_password:
+      settings.mysql_user === "root" ? settings.mysql_root_password : settings.mysql_password,
+  };
+}
+
+async function loadMysqlSecrets(workdir: string, settings: Settings): Promise<MysqlSecrets> {
+  const base = getMysqlSettings(settings);
+  const fromFile = await readMysqlSecretsFile(workdir);
+  const mysqlRootPassword = fromFile?.mysql_root_password ?? base.mysql_root_password;
+  const mysqlDatabase = fromFile?.mysql_database ?? base.mysql_database;
+  const mysqlUser = fromFile?.mysql_user ?? base.mysql_user;
+  let mysqlPassword = fromFile?.mysql_password ?? base.mysql_password;
+  if (mysqlUser === "root") {
+    mysqlPassword = mysqlRootPassword;
+  }
+  const secrets = { mysql_root_password: mysqlRootPassword, mysql_database: mysqlDatabase, mysql_user: mysqlUser, mysql_password: mysqlPassword };
+  await writeMysqlSecrets(workdir, secrets);
+  return secrets;
 }
 
 server.get("/health", async () => ({ status: "ok" }));
@@ -167,16 +202,54 @@ server.get("/settings", async () => {
   const settings = getSettings(db);
   return {
     port_ranges: JSON.parse(settings.port_ranges_json) as PortRange[],
+    mysql_root_password: settings.mysql_root_password,
+    mysql_database: settings.mysql_database,
+    mysql_user: settings.mysql_user,
+    mysql_password: settings.mysql_password,
     updated_at: settings.updated_at,
   };
 });
 
 server.put("/settings", async (request, reply) => {
   try {
-    const body = request.body as { port_ranges?: unknown };
+    const body = request.body as {
+      port_ranges?: unknown;
+      mysql_root_password?: unknown;
+      mysql_database?: unknown;
+      mysql_user?: unknown;
+      mysql_password?: unknown;
+    };
     const ranges = parsePortRanges(body?.port_ranges);
-    const settings = updateSettings(db, ranges);
-    reply.send({ port_ranges: JSON.parse(settings.port_ranges_json), updated_at: settings.updated_at });
+    const mysqlRootPassword = String(body?.mysql_root_password ?? "").trim();
+    const mysqlDatabase = String(body?.mysql_database ?? "").trim();
+    const mysqlUser = String(body?.mysql_user ?? "").trim();
+    let mysqlPassword = String(body?.mysql_password ?? "").trim();
+
+    if (!mysqlRootPassword || !mysqlDatabase || !mysqlUser) {
+      throw new Error("MySQL認証情報が不正です");
+    }
+    if (mysqlUser === "root") {
+      mysqlPassword = mysqlRootPassword;
+    }
+    if (!mysqlPassword) {
+      throw new Error("MySQL認証情報が不正です");
+    }
+
+    const settings = updateSettings(db, {
+      portRanges: ranges,
+      mysqlRootPassword,
+      mysqlDatabase,
+      mysqlUser,
+      mysqlPassword,
+    });
+    reply.send({
+      port_ranges: JSON.parse(settings.port_ranges_json),
+      mysql_root_password: settings.mysql_root_password,
+      mysql_database: settings.mysql_database,
+      mysql_user: settings.mysql_user,
+      mysql_password: settings.mysql_password,
+      updated_at: settings.updated_at,
+    });
   } catch (error) {
     reply.status(400).send({ error: (error as Error).message });
   }
@@ -298,14 +371,18 @@ server.post("/instances", async (request, reply) => {
           .stat(path.join(packDir, "db", "init.sql"))
           .then(() => true)
           .catch(() => false);
-        const dbRootPassword = challenge.db_type === "mysql" ? await readMysqlPassword(workdir) : null;
+        const mysqlSecrets =
+          challenge.db_type === "mysql" ? await loadMysqlSecrets(workdir, settings) : null;
 
         await writeComposeFiles(composeDir, {
           runtime: challenge.runtime,
           runtimeVersion: challenge.runtime_version,
           hostPort,
           dbType: challenge.db_type,
-          dbRootPassword,
+          dbRootPassword: mysqlSecrets?.mysql_root_password ?? null,
+          dbDatabase: mysqlSecrets?.mysql_database ?? null,
+          dbUser: mysqlSecrets?.mysql_user ?? null,
+          dbPassword: mysqlSecrets?.mysql_password ?? null,
           dbInitExists,
         });
 
@@ -342,25 +419,18 @@ server.post("/instances", async (request, reply) => {
       .then(() => true)
       .catch(() => false);
 
-    const dbRootPassword =
-      challenge.db_type === "mysql"
-        ? crypto.randomBytes(12).toString("base64url")
-        : null;
-
-    if (dbRootPassword) {
-      await fs.writeFile(
-        path.join(workdir, "secrets.json"),
-        JSON.stringify({ mysql_root_password: dbRootPassword }, null, 2),
-        "utf8"
-      );
-    }
+    const mysqlSecrets =
+      challenge.db_type === "mysql" ? await loadMysqlSecrets(workdir, settings) : null;
 
     await writeComposeFiles(composeDir, {
       runtime: challenge.runtime,
       runtimeVersion: challenge.runtime_version,
       hostPort,
       dbType: challenge.db_type,
-      dbRootPassword,
+      dbRootPassword: mysqlSecrets?.mysql_root_password ?? null,
+      dbDatabase: mysqlSecrets?.mysql_database ?? null,
+      dbUser: mysqlSecrets?.mysql_user ?? null,
+      dbPassword: mysqlSecrets?.mysql_password ?? null,
       dbInitExists,
     });
 

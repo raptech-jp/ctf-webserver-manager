@@ -9,6 +9,9 @@ export type ComposeParams = {
   hostPort: number;
   dbType: DbType;
   dbRootPassword: string | null;
+  dbDatabase: string | null;
+  dbUser: string | null;
+  dbPassword: string | null;
   dbInitExists: boolean;
 };
 
@@ -43,13 +46,15 @@ export async function writeComposeFiles(
     "utf8"
   );
 
-  const dbName = "ctf";
+  const dbName = params.dbDatabase ?? "ctf";
+  const appUser = params.dbUser ?? "root";
+  const appPassword = appUser === "root" ? params.dbRootPassword ?? "" : params.dbPassword ?? "";
   const appEnv = params.dbType === "mysql"
     ? [
         "    environment:",
         "      MYSQL_HOST: db",
-        "      MYSQL_USER: root",
-        `      MYSQL_PASSWORD: ${params.dbRootPassword ?? ""}`,
+        `      MYSQL_USER: ${appUser}`,
+        `      MYSQL_PASSWORD: ${appPassword}`,
         `      MYSQL_DATABASE: ${dbName}`,
       ].join("\n")
     : "";
@@ -62,13 +67,20 @@ export async function writeComposeFiles(
     ? "      - ../pack/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro"
     : "";
 
+  const mysqlEnv = [
+    `      MYSQL_ROOT_PASSWORD: ${params.dbRootPassword ?? ""}`,
+    `      MYSQL_DATABASE: ${dbName}`,
+  ];
+  if (appUser !== "root") {
+    mysqlEnv.push(`      MYSQL_USER: ${appUser}`);
+    mysqlEnv.push(`      MYSQL_PASSWORD: ${appPassword}`);
+  }
   const mysqlService = params.dbType === "mysql"
     ? [
         "  db:",
         "    image: mysql:8",
         "    environment:",
-        `      MYSQL_ROOT_PASSWORD: ${params.dbRootPassword ?? ""}`,
-        `      MYSQL_DATABASE: ${dbName}`,
+        ...mysqlEnv,
         "    volumes:",
         "      - ../mysql-data:/var/lib/mysql",
         dbInitLine,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { DragEvent } from "react";
 import Link from "next/link";
 import { AGENT_URL } from "../lib/api";
 
@@ -53,6 +54,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const [logsText, setLogsText] = useState("");
+  const [isChallengeDrag, setIsChallengeDrag] = useState(false);
+  const [isImportDrag, setIsImportDrag] = useState(false);
 
   const [challengeForm, setChallengeForm] = useState<ChallengeForm>({
     name: "",
@@ -62,12 +65,6 @@ export default function Home() {
     zip: null,
   });
   const [importZip, setImportZip] = useState<File | null>(null);
-  const [importForm, setImportForm] = useState<Omit<ChallengeForm, "zip">>({
-    name: "",
-    runtime: "php",
-    runtime_version: runtimeDefaults.php,
-    db_type: "none",
-  });
 
   const fetchDetail = useCallback(async (challengeId: string) => {
     const response = await fetch(`${AGENT_URL}/challenges/${challengeId}`);
@@ -164,6 +161,37 @@ export default function Home() {
     }
   };
 
+  const extractZipFile = (files: FileList | null): File | null => {
+    if (!files || files.length === 0) {
+      return null;
+    }
+    const file = files[0];
+    if (!file.name.toLowerCase().endsWith(".zip")) {
+      setError("ZIPファイルを選択してください");
+      return null;
+    }
+    setError(null);
+    return file;
+  };
+
+  const handleChallengeDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    setIsChallengeDrag(false);
+    const file = extractZipFile(event.dataTransfer?.files ?? null);
+    if (file) {
+      setChallengeForm((prev) => ({ ...prev, zip: file }));
+    }
+  };
+
+  const handleImportDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    setIsImportDrag(false);
+    const file = extractZipFile(event.dataTransfer?.files ?? null);
+    if (file) {
+      setImportZip(file);
+    }
+  };
+
   const handleImport = async () => {
     setError(null);
     setNotice(null);
@@ -175,17 +203,6 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append("zip", importZip);
-      if (importForm.name.trim()) {
-        formData.append(
-          "metadata",
-          JSON.stringify({
-            name: importForm.name,
-            runtime: importForm.runtime,
-            runtime_version: importForm.runtime_version,
-            db_type: importForm.db_type,
-          })
-        );
-      }
       const response = await fetch(`${AGENT_URL}/import`, {
         method: "POST",
         body: formData,
@@ -195,7 +212,6 @@ export default function Home() {
         throw new Error(data.error ?? "インポートに失敗しました");
       }
       setImportZip(null);
-      setImportForm((prev) => ({ ...prev, name: "" }));
       setNotice("インポートが完了しました");
       await fetchChallenges();
     } catch (err) {
@@ -346,13 +362,6 @@ export default function Home() {
           >
             Settings
           </Link>
-          <button
-            className="rounded-full bg-zinc-900 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800"
-            onClick={() => fetchChallenges().catch((err) => setError(err.message))}
-            disabled={loading}
-          >
-            Refresh
-          </button>
         </div>
       </header>
 
@@ -369,7 +378,17 @@ export default function Home() {
 
       <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <aside className="space-y-6">
-          <section className="rounded-3xl border border-zinc-200 bg-white/80 p-5 shadow-sm">
+          <section
+            className={`rounded-3xl border border-zinc-200 bg-white/80 p-5 shadow-sm transition ${
+              isChallengeDrag ? "ring-2 ring-zinc-900/20" : ""
+            }`}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setIsChallengeDrag(true);
+            }}
+            onDragLeave={() => setIsChallengeDrag(false)}
+            onDrop={handleChallengeDrop}
+          >
             <h2 className="mb-4 text-lg font-semibold text-zinc-900">New Challenge</h2>
             <div className="space-y-3 text-sm">
               <label className="block">
@@ -438,22 +457,28 @@ export default function Home() {
                   <option value="mysql">MySQL</option>
                 </select>
               </label>
-              <label className="block">
+              <div>
                 <span className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
                   ZIP
                 </span>
-                <input
-                  type="file"
-                  accept=".zip"
-                  onChange={(event) =>
-                    setChallengeForm((prev) => ({
-                      ...prev,
-                      zip: event.target.files?.[0] ?? null,
-                    }))
-                  }
-                  className="w-full text-sm"
-                />
-              </label>
+                <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-dashed border-zinc-300 bg-white px-4 py-3 text-sm text-zinc-600 hover:border-zinc-400">
+                  <input
+                    type="file"
+                    accept=".zip"
+                    onChange={(event) =>
+                      setChallengeForm((prev) => ({
+                        ...prev,
+                        zip: extractZipFile(event.target.files),
+                      }))
+                    }
+                    className="sr-only"
+                  />
+                  <span className="font-semibold">ファイルを選択</span>
+                  <span className="truncate text-xs text-zinc-500">
+                    {challengeForm.zip ? challengeForm.zip.name : "未選択"}
+                  </span>
+                </label>
+              </div>
               <button
                 className="w-full rounded-2xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
                 onClick={handleCreateChallenge}
@@ -464,81 +489,31 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="rounded-3xl border border-zinc-200 bg-white/80 p-5 shadow-sm">
+          <section
+            className={`rounded-3xl border border-zinc-200 bg-white/80 p-5 shadow-sm transition ${
+              isImportDrag ? "ring-2 ring-zinc-900/20" : ""
+            }`}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setIsImportDrag(true);
+            }}
+            onDragLeave={() => setIsImportDrag(false)}
+            onDrop={handleImportDrop}
+          >
             <h2 className="mb-4 text-lg font-semibold text-zinc-900">Import Pack</h2>
             <div className="space-y-3 text-sm">
-              <label className="block">
-                <span className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">Name</span>
+              <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-dashed border-zinc-300 bg-white px-4 py-3 text-sm text-zinc-600 hover:border-zinc-400">
                 <input
-                  value={importForm.name}
-                  onChange={(event) =>
-                    setImportForm((prev) => ({ ...prev, name: event.target.value }))
-                  }
-                  className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                  placeholder="Manifestが無い場合のみ必要"
+                  type="file"
+                  accept=".zip"
+                  onChange={(event) => setImportZip(extractZipFile(event.target.files))}
+                  className="sr-only"
                 />
+                <span className="font-semibold">ファイルを選択</span>
+                <span className="truncate text-xs text-zinc-500">
+                  {importZip ? importZip.name : "未選択"}
+                </span>
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
-                    Runtime
-                  </span>
-                  <select
-                    value={importForm.runtime}
-                    onChange={(event) =>
-                      setImportForm((prev) => ({
-                        ...prev,
-                        runtime: event.target.value as ChallengeForm["runtime"],
-                        runtime_version: runtimeDefaults[
-                          event.target.value as ChallengeForm["runtime"]
-                        ],
-                      }))
-                    }
-                    className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                  >
-                    <option value="php">PHP (Apache)</option>
-                    <option value="flask">Flask (Gunicorn)</option>
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
-                    Version
-                  </span>
-                  <input
-                    value={importForm.runtime_version}
-                    onChange={(event) =>
-                      setImportForm((prev) => ({
-                        ...prev,
-                        runtime_version: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                    placeholder="8.2"
-                  />
-                </label>
-              </div>
-              <label className="block">
-                <span className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">DB</span>
-                <select
-                  value={importForm.db_type}
-                  onChange={(event) =>
-                    setImportForm((prev) => ({
-                      ...prev,
-                      db_type: event.target.value as ChallengeForm["db_type"],
-                    }))
-                  }
-                  className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                >
-                  <option value="none">None</option>
-                  <option value="mysql">MySQL</option>
-                </select>
-              </label>
-              <input
-                type="file"
-                accept=".zip"
-                onChange={(event) => setImportZip(event.target.files?.[0] ?? null)}
-                className="w-full text-sm"
-              />
               <button
                 className="w-full rounded-2xl border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:border-zinc-400"
                 onClick={handleImport}

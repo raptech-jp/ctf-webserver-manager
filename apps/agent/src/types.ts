@@ -9,6 +9,10 @@ export type PortRange = {
 export type Settings = {
   id: 1;
   port_ranges_json: string;
+  mysql_root_password: string;
+  mysql_database: string;
+  mysql_user: string;
+  mysql_password: string;
   created_at: string;
   updated_at: string;
 };

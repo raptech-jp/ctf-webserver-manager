@@ -1,5 +1,5 @@
-import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promises as fs } from "node:fs";
 
 export type AppPaths = {
@@ -14,14 +14,9 @@ export type AppPaths = {
 };
 
 export function getAppDataRoot(): string {
-  const platform = process.platform;
-  if (platform === "win32") {
-    return process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
-  }
-  if (platform === "darwin") {
-    return path.join(os.homedir(), "Library", "Application Support");
-  }
-  return process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share");
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(currentDir, "..", "..", "..");
+  return path.join(repoRoot, ".appdata");
 }
 
 export function getPaths(): AppPaths {

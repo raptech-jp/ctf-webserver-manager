@@ -1,9 +1,16 @@
 import Database from "better-sqlite3";
+import crypto from "node:crypto";
 import type { Challenge, Instance, PortRange, Settings } from "./types";
 
 const DEFAULT_PORT_RANGES: PortRange[] = [
   { start: 43000, end: 43100 },
 ];
+const DEFAULT_MYSQL_DATABASE = "ctf";
+const DEFAULT_MYSQL_USER = "root";
+
+function generatePassword(): string {
+  return crypto.randomBytes(12).toString("base64url");
+}
 
 export type DbContext = {
   db: Database.Database;
@@ -13,7 +20,9 @@ export function initDb(dbPath: string): DbContext {
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   migrate(db);
+  ensureSettingsColumns(db);
   ensureSettings(db);
+  normalizeSettings(db);
   return { db };
 }
 
@@ -22,6 +31,10 @@ function migrate(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       port_ranges_json TEXT NOT NULL,
+      mysql_root_password TEXT,
+      mysql_database TEXT,
+      mysql_user TEXT,
+      mysql_password TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -49,13 +62,84 @@ function migrate(db: Database.Database): void {
   `);
 }
 
+function ensureSettingsColumns(db: Database.Database): void {
+  const columns = db
+    .prepare("PRAGMA table_info(settings)")
+    .all()
+    .map((row) => (row as { name: string }).name);
+  const addColumn = (name: string) => {
+    if (!columns.includes(name)) {
+      db.exec(`ALTER TABLE settings ADD COLUMN ${name} TEXT`);
+    }
+  };
+  addColumn("mysql_root_password");
+  addColumn("mysql_database");
+  addColumn("mysql_user");
+  addColumn("mysql_password");
+}
+
 function ensureSettings(db: Database.Database): void {
   const row = db.prepare("SELECT id FROM settings WHERE id = 1").get();
   if (!row) {
     const now = new Date().toISOString();
+    const mysqlRootPassword = generatePassword();
     db.prepare(
-      "INSERT INTO settings (id, port_ranges_json, created_at, updated_at) VALUES (1, ?, ?, ?)"
-    ).run(JSON.stringify(DEFAULT_PORT_RANGES), now, now);
+      `INSERT INTO settings (
+        id,
+        port_ranges_json,
+        mysql_root_password,
+        mysql_database,
+        mysql_user,
+        mysql_password,
+        created_at,
+        updated_at
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      JSON.stringify(DEFAULT_PORT_RANGES),
+      mysqlRootPassword,
+      DEFAULT_MYSQL_DATABASE,
+      DEFAULT_MYSQL_USER,
+      mysqlRootPassword,
+      now,
+      now
+    );
+  }
+}
+
+function normalizeSettings(db: Database.Database): void {
+  const current = getSettings(db);
+  let changed = false;
+  let mysqlRootPassword = current.mysql_root_password;
+  if (!mysqlRootPassword) {
+    mysqlRootPassword = generatePassword();
+    changed = true;
+  }
+  let mysqlDatabase = current.mysql_database;
+  if (!mysqlDatabase) {
+    mysqlDatabase = DEFAULT_MYSQL_DATABASE;
+    changed = true;
+  }
+  let mysqlUser = current.mysql_user;
+  if (!mysqlUser) {
+    mysqlUser = DEFAULT_MYSQL_USER;
+    changed = true;
+  }
+  let mysqlPassword = current.mysql_password;
+  if (!mysqlPassword) {
+    mysqlPassword = mysqlUser === "root" ? mysqlRootPassword : generatePassword();
+    changed = true;
+  }
+  if (changed) {
+    const now = new Date().toISOString();
+    db.prepare(
+      `UPDATE settings SET
+        mysql_root_password = ?,
+        mysql_database = ?,
+        mysql_user = ?,
+        mysql_password = ?,
+        updated_at = ?
+      WHERE id = 1`
+    ).run(mysqlRootPassword, mysqlDatabase, mysqlUser, mysqlPassword, now);
   }
 }
 
@@ -63,10 +147,39 @@ export function getSettings(db: Database.Database): Settings {
   return db.prepare("SELECT * FROM settings WHERE id = 1").get() as Settings;
 }
 
-export function updateSettings(db: Database.Database, portRanges: PortRange[]): Settings {
+export type SettingsUpdate = {
+  portRanges?: PortRange[];
+  mysqlRootPassword?: string;
+  mysqlDatabase?: string;
+  mysqlUser?: string;
+  mysqlPassword?: string;
+};
+
+export function updateSettings(db: Database.Database, update: SettingsUpdate): Settings {
+  const current = getSettings(db);
+  const portRangesJson = update.portRanges
+    ? JSON.stringify(update.portRanges)
+    : current.port_ranges_json;
+  const mysqlRootPassword = update.mysqlRootPassword ?? current.mysql_root_password;
+  const mysqlDatabase = update.mysqlDatabase ?? current.mysql_database;
+  const mysqlUser = update.mysqlUser ?? current.mysql_user;
+  const mysqlPassword = update.mysqlPassword ?? current.mysql_password;
   const now = new Date().toISOString();
-  db.prepare("UPDATE settings SET port_ranges_json = ?, updated_at = ? WHERE id = 1").run(
-    JSON.stringify(portRanges),
+  db.prepare(
+    `UPDATE settings SET
+      port_ranges_json = ?,
+      mysql_root_password = ?,
+      mysql_database = ?,
+      mysql_user = ?,
+      mysql_password = ?,
+      updated_at = ?
+     WHERE id = 1`
+  ).run(
+    portRangesJson,
+    mysqlRootPassword,
+    mysqlDatabase,
+    mysqlUser,
+    mysqlPassword,
     now
   );
   return getSettings(db);
