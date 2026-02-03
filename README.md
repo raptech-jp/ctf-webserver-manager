@@ -1,36 +1,97 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CTF Web Launcher (MVP)
 
-## Getting Started
+CTF Web問題をGUIで簡単に起動・停止できるローカルランチャーです。ZIPを登録し、ランタイムとDBを選ぶと空きポートを割り当ててDocker Composeで起動します。
 
-First, run the development server:
+## リポジトリ構成
+
+- `apps/web`: Next.js (App Router) UI
+- `apps/agent`: Fastify + SQLite のローカルAgent
+- `templates/`: Docker Compose / Dockerfile テンプレート
+- `packs/examples/`: サンプル問題
+- `scripts/`: 起動スクリプト
+
+## 必要要件
+
+- Node.js 20 以上
+- pnpm
+- Docker Desktop / Docker Engine + `docker compose`
+
+## セットアップ
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- Web: `http://localhost:3000`
+- Agent: `http://127.0.0.1:43765`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+macOS/Linux では `scripts/dev.sh`、Windows では `scripts/dev.ps1` も利用できます。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 使い方
 
-## Learn More
+1. Web画面の **New Challenge** からZIPとメタデータを登録
+1. **Start New** でインスタンスを起動
+1. **Open** で `http://127.0.0.1:<host_port>/` を開く
+1. **Logs** でログを確認、**Stop** で停止
+1. **Delete** でインスタンスを削除
+1. **Export** で challenge-pack.zip を出力
 
-To learn more about Next.js, take a look at the following resources:
+### インスタンス仕様
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- 1つのChallengeに対してインスタンスは1つのみです。
+- 起動中はStartが無効になります。
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### ZIPの配置ルール (PHP)
 
-## Deploy on Vercel
+- ZIP内の内容は `/var/www/html` 直下に展開されます。
+- ZIP内が単一のトップディレクトリ構成の場合は自動でフラット化します。
+- PHP(Apache) では `index.html` または `index.php` が直下に無いと登録に失敗します。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### インポート
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Import Pack** から `challenge-pack.zip` をアップロード
+- `manifest.json` が無い場合は、UIでランタイム等を入力してから登録
+
+## サンプル問題
+
+- `packs/examples/php-hello`
+- `packs/examples/flask-hello`
+
+例: サンプルをZIP化して登録
+
+```bash
+cd packs/examples/php-hello
+zip -r ../../php-hello.zip .
+```
+
+## challenge-pack.zip の構造
+
+```
+manifest.json
+files/
+  ...
+  db/init.sql (任意)
+```
+
+`manifest.json` はAgentが生成します。
+
+## データ保存先
+
+AgentはOSごとのアプリデータ配下に保存します。
+
+- macOS: `~/Library/Application Support/ctf-web-launcher`
+- Windows: `%APPDATA%\ctf-web-launcher`
+- Linux: `~/.local/share/ctf-web-launcher` (または `XDG_DATA_HOME`)
+
+## 環境変数
+
+- `NEXT_PUBLIC_AGENT_URL`: WebからアクセスするAgent URL
+- `WEB_ORIGIN`: AgentのCORS許可Origin (カンマ区切り)
+- `AGENT_HOST` / `AGENT_PORT`: Agentの待ち受け
+
+## 既知の制約
+
+- サブドメイン/パス公開は未対応（ホストポートのみ）
+- Flaskのエントリポイントは `app.py` 固定
+- Docker と `docker compose` がローカルに必要

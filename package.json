@@ -1,26 +1,13 @@
 {
   "name": "ctf-webserver-manager",
-  "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@9.15.2",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "next": "16.1.6",
-    "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "dev": "concurrently -n web,agent -c blue,green \"pnpm -C apps/web dev\" \"pnpm -C apps/agent dev\"",
+    "build": "pnpm -C apps/web build && pnpm -C apps/agent build",
+    "lint": "pnpm -C apps/web lint && pnpm -C apps/agent lint"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.1.6",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "concurrently": "^9.1.2"
   }
 }

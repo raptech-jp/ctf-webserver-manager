@@ -1,0 +1,16 @@
+version: "3.9"
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: ./compose/Dockerfile
+    ports:
+      - "{{HOST_PORT}}:8000"
+    working_dir: /app
+    volumes:
+      - ../pack:/app
+    command: >
+      sh -c "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi; gunicorn -b 0.0.0.0:8000 app:app"
+{{APP_ENV}}
+{{DB_DEPENDS}}
+{{MYSQL_SERVICE}}
