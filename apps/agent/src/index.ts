@@ -219,20 +219,39 @@ server.put("/settings", async (request, reply) => {
       mysql_user?: unknown;
       mysql_password?: unknown;
     };
-    const ranges = parsePortRanges(body?.port_ranges);
-    const mysqlRootPassword = String(body?.mysql_root_password ?? "").trim();
-    const mysqlDatabase = String(body?.mysql_database ?? "").trim();
-    const mysqlUser = String(body?.mysql_user ?? "").trim();
-    let mysqlPassword = String(body?.mysql_password ?? "").trim();
+    const hasPortRanges = typeof body?.port_ranges !== "undefined";
+    const hasMysql =
+      typeof body?.mysql_root_password !== "undefined" ||
+      typeof body?.mysql_database !== "undefined" ||
+      typeof body?.mysql_user !== "undefined" ||
+      typeof body?.mysql_password !== "undefined";
 
-    if (!mysqlRootPassword || !mysqlDatabase || !mysqlUser) {
-      throw new Error("MySQL認証情報が不正です");
+    if (!hasPortRanges && !hasMysql) {
+      throw new Error("更新内容がありません");
     }
-    if (mysqlUser === "root") {
-      mysqlPassword = mysqlRootPassword;
-    }
-    if (!mysqlPassword) {
-      throw new Error("MySQL認証情報が不正です");
+
+    const ranges = hasPortRanges ? parsePortRanges(body?.port_ranges) : undefined;
+
+    let mysqlRootPassword: string | undefined;
+    let mysqlDatabase: string | undefined;
+    let mysqlUser: string | undefined;
+    let mysqlPassword: string | undefined;
+
+    if (hasMysql) {
+      mysqlRootPassword = String(body?.mysql_root_password ?? "").trim();
+      mysqlDatabase = String(body?.mysql_database ?? "").trim();
+      mysqlUser = String(body?.mysql_user ?? "").trim();
+      mysqlPassword = String(body?.mysql_password ?? "").trim();
+
+      if (!mysqlRootPassword || !mysqlDatabase || !mysqlUser) {
+        throw new Error("MySQL認証情報が不正です");
+      }
+      if (mysqlUser === "root") {
+        mysqlPassword = mysqlRootPassword;
+      }
+      if (!mysqlPassword) {
+        throw new Error("MySQL認証情報が不正です");
+      }
     }
 
     const settings = updateSettings(db, {

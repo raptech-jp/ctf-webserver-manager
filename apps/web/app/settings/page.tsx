@@ -46,7 +46,7 @@ export default function SettingsPage() {
     setRanges((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const saveSettings = async () => {
+  const savePortRanges = async () => {
     setError(null);
     setNotice(null);
     setLoading(true);
@@ -56,6 +56,29 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           port_ranges: ranges,
+        }),
+      });
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string };
+        throw new Error(data.error ?? "保存に失敗しました");
+      }
+      setNotice("保存しました");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveMysqlSettings = async () => {
+    setError(null);
+    setNotice(null);
+    setLoading(true);
+    try {
+      const response = await fetch(`${AGENT_URL}/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           mysql_root_password: mysqlRootPassword,
           mysql_database: mysqlDatabase,
           mysql_user: mysqlUser,
@@ -145,7 +168,7 @@ export default function SettingsPage() {
           </button>
           <button
             className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
-            onClick={saveSettings}
+            onClick={savePortRanges}
             disabled={loading}
           >
             Save
@@ -204,6 +227,15 @@ export default function SettingsPage() {
         <p className="mt-3 text-xs text-zinc-500">
           Usernameが <span className="font-mono">root</span> の場合、PasswordはRoot Passwordと同一になります。
         </p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button
+            className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+            onClick={saveMysqlSettings}
+            disabled={loading}
+          >
+            Save
+          </button>
+        </div>
       </section>
     </div>
   );
