@@ -597,7 +597,7 @@ export default function Home() {
                           Stop
                         </button>
                         <button
-                          className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-400 hover:border-zinc-300 hover:text-zinc-600"
+                          className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-semibold text-zinc-600 hover:border-zinc-400"
                           onClick={() => handleExport(challenge.id)}
                           disabled={loading}
                         >
