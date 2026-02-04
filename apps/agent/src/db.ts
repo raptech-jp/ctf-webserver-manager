@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import crypto from "node:crypto";
-import type { Challenge, Instance, PortRange, Settings } from "./types";
+import type { Challenge, Instance, PortRange, Settings } from "./types.js";
 
 const DEFAULT_PORT_RANGES: PortRange[] = [
   { start: 43000, end: 43100 },

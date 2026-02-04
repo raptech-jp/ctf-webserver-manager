@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "concurrently -n web,agent -c blue,green \"pnpm -C apps/web dev\" \"pnpm -C apps/agent dev\"",
     "build": "pnpm -C apps/web build && pnpm -C apps/agent build",
+    "start": "concurrently -n web,agent -c blue,green \"pnpm -C apps/web start\" \"pnpm -C apps/agent start\"",
     "lint": "pnpm -C apps/web lint && pnpm -C apps/agent lint"
   },
   "devDependencies": {

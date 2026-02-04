@@ -5,7 +5,7 @@ import multipart from "@fastify/multipart";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import crypto from "node:crypto";
-import { ensureBaseDirs, getPaths, resolveChallengeDir, resolveWorkdir } from "./storage";
+import { ensureBaseDirs, getPaths, resolveChallengeDir, resolveWorkdir } from "./storage.js";
 import {
   getSettings,
   initDb,
@@ -23,14 +23,14 @@ import {
   deleteInstance,
   deleteChallenge,
   deleteInstancesByChallenge,
-} from "./db";
-import type { DbType, Manifest, PortRange, Runtime, Settings } from "./types";
-import { extractZipSafe, saveStreamToFile } from "./zip";
-import { hashDirectory } from "./hash";
-import { findAvailablePort, isPortAvailable } from "./ports";
-import { writeComposeFiles } from "./templates";
-import { composeDown, composeLogs, composeUp } from "./docker";
-import { assertDocrootIndex, normalizeExtractedPack } from "./pack";
+} from "./db.js";
+import type { DbType, Manifest, PortRange, Runtime, Settings, Instance } from "./types.js";
+import { extractZipSafe, saveStreamToFile } from "./zip.js";
+import { hashDirectory } from "./hash.js";
+import { findAvailablePort, isPortAvailable } from "./ports.js";
+import { writeComposeFiles } from "./templates.js";
+import { composeDown, composeLogs, composeUp } from "./docker.js";
+import { assertDocrootIndex, normalizeExtractedPack } from "./pack.js";
 import archiver from "archiver";
 
 const paths = getPaths();
@@ -120,7 +120,7 @@ async function parseMultipart(request: FastifyRequest): Promise<{
       zipPath = target;
     } else if (part.type === "field") {
       if (part.fieldname === "metadata") {
-        metadataRaw = part.value;
+        metadataRaw = typeof part.value === "string" ? part.value : String(part.value);
       }
     }
   }
@@ -217,7 +217,9 @@ server.get("/ports/summary", async (request, reply) => {
     const settings = getSettings(db);
     const ranges = JSON.parse(settings.port_ranges_json) as PortRange[];
     const total = ranges.reduce((sum, range) => sum + (range.end - range.start + 1), 0);
-    const usedPorts = new Set(listRunningInstances(db).map((instance) => instance.host_port));
+    const usedPorts = new Set<number>(
+      listRunningInstances(db).map((instance: Instance) => instance.host_port)
+    );
     let used = 0;
     for (const port of usedPorts) {
       if (ranges.some((range) => port >= range.start && port <= range.end)) {
@@ -418,7 +420,9 @@ server.post("/instances", async (request, reply) => {
       if (packExists && composeExists) {
         const settings = getSettings(db);
         const ranges = JSON.parse(settings.port_ranges_json) as PortRange[];
-        const reservedPorts = new Set(listRunningInstances(db).map((instance) => instance.host_port));
+      const reservedPorts = new Set(
+        listRunningInstances(db).map((instance: Instance) => instance.host_port)
+      );
         let hostPort = latestInstance.host_port;
 
         if (reservedPorts.has(hostPort)) {
@@ -466,7 +470,9 @@ server.post("/instances", async (request, reply) => {
 
     const settings = getSettings(db);
     const ranges = JSON.parse(settings.port_ranges_json) as PortRange[];
-    const reservedPorts = new Set(listRunningInstances(db).map((instance) => instance.host_port));
+    const reservedPorts = new Set(
+      listRunningInstances(db).map((instance: Instance) => instance.host_port)
+    );
     const hostPort = await findAvailablePort(ranges, reservedPorts);
     const containerPort = getContainerPort(challenge.runtime);
 

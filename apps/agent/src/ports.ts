@@ -1,5 +1,5 @@
 import net from "node:net";
-import type { PortRange } from "./types";
+import type { PortRange } from "./types.js";
 
 export async function isPortAvailable(port: number): Promise<boolean> {
   return await new Promise((resolve) => {

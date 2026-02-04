@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promises as fs } from "node:fs";
-import type { DbType, Runtime } from "./types";
+import type { DbType, Runtime } from "./types.js";
 
 export type ComposeParams = {
   runtime: Runtime;

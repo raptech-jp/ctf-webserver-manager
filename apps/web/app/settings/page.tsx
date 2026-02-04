@@ -151,7 +151,7 @@ export default function SettingsPage() {
     }
   };
 
-  const saveFqdn = async () => {
+  const saveHost = async () => {
     setError(null);
     setNotice(null);
     setLoading(true);
@@ -297,7 +297,7 @@ export default function SettingsPage() {
           </label>
           <button
             className="h-10 rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
-            onClick={saveFqdn}
+            onClick={saveHost}
             disabled={loading}
           >
             Save
