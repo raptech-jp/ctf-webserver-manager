@@ -255,7 +255,7 @@ export default function SettingsPage() {
             Add Range
           </button>
           <button
-            className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+            className="rounded-full bg-[#1d1d1f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2a2a2c]"
             onClick={savePortRanges}
             disabled={loading}
           >
@@ -296,7 +296,7 @@ export default function SettingsPage() {
             />
           </label>
           <button
-            className="h-10 rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+            className="h-10 rounded-full bg-[#1d1d1f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2a2a2c]"
             onClick={saveHost}
             disabled={loading}
           >
@@ -358,7 +358,7 @@ export default function SettingsPage() {
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <button
-            className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+            className="rounded-full bg-[#1d1d1f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2a2a2c]"
             onClick={saveMysqlSettings}
             disabled={loading}
           >

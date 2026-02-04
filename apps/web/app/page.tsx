@@ -307,6 +307,37 @@ export default function Home() {
     }
   };
 
+  const handleStartAll = async () => {
+    if (challenges.length === 0) {
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    setProgressLabel("全て起動中...");
+    setLoading(true);
+    try {
+      for (const challenge of challenges) {
+        const response = await fetch(`${AGENT_URL}/instances`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ challenge_id: challenge.id }),
+        });
+        if (!response.ok && response.status !== 409) {
+          const data = (await response.json()) as { error?: string };
+          throw new Error(data.error ?? "起動に失敗しました");
+        }
+      }
+      setNotice("全て起動しました");
+      await fetchChallenges();
+      await fetchPortSummary();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+      setProgressLabel(null);
+    }
+  };
+
   const handleStop = async (challengeId: string) => {
     setError(null);
     setNotice(null);
@@ -323,6 +354,40 @@ export default function Home() {
       }
       setNotice("停止しました");
       await fetchDetail(challengeId);
+      await fetchPortSummary();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+      setProgressLabel(null);
+    }
+  };
+
+  const handleStopAll = async () => {
+    if (challenges.length === 0) {
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    setProgressLabel("全て停止中...");
+    setLoading(true);
+    try {
+      for (const challenge of challenges) {
+        const detail = await fetchDetail(challenge.id).catch(() => null);
+        const instance = detail?.instances?.[0];
+        if (!instance || instance.status !== "running") {
+          continue;
+        }
+        const response = await fetch(`${AGENT_URL}/instances/${instance.id}/stop`, {
+          method: "POST",
+        });
+        if (!response.ok) {
+          const data = (await response.json()) as { error?: string };
+          throw new Error(data.error ?? "停止に失敗しました");
+        }
+      }
+      setNotice("全て停止しました");
+      await fetchChallenges();
       await fetchPortSummary();
     } catch (err) {
       setError((err as Error).message);
@@ -455,10 +520,10 @@ export default function Home() {
             ZIPを登録し、ランタイムとDBを選ぶだけでDocker Composeの起動・停止・ログ確認を行います。
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center">
           <Link
             href="/settings"
-            className="rounded-full border border-zinc-300 bg-white/70 px-5 py-2 text-sm font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400"
+            className="translate-y-2 rounded-full bg-[#1d1d1f] px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2a2a2c]"
           >
             Settings
           </Link>
@@ -478,22 +543,40 @@ export default function Home() {
           </div>
         </div>
       )}
-      {portSummary && (
-        <div className="mb-4 flex items-center gap-2 text-sm text-zinc-600">
-          <span className="text-xs uppercase tracking-widest text-zinc-400">Ports</span>
-          <span
-            className={`font-mono font-semibold ${
-              portSummary.total > 0 && portSummary.free / portSummary.total <= 0.1
-                ? "text-red-600"
-                : "text-zinc-500"
-            }`}
+      <div className="mt-6 mb-4 flex flex-wrap items-center justify-between gap-3">
+        {portSummary && (
+          <div className="flex items-center gap-2 text-sm text-zinc-600">
+            <span className="text-xs uppercase tracking-widest text-zinc-400">Ports</span>
+            <span
+              className={`font-mono font-semibold ${
+                portSummary.total > 0 && portSummary.free / portSummary.total <= 0.1
+                  ? "text-red-600"
+                  : "text-zinc-500"
+              }`}
+            >
+              {portSummary.free}
+            </span>
+            <span className="text-zinc-400">/</span>
+            <span className="font-mono font-semibold text-zinc-500">{portSummary.total}</span>
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <button
+            className="rounded-full border border-zinc-300 bg-white/70 px-5 py-2 text-sm font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400"
+            onClick={handleStartAll}
+            disabled={loading || challenges.length === 0}
           >
-            {portSummary.free}
-          </span>
-          <span className="text-zinc-400">/</span>
-          <span className="font-mono font-semibold text-zinc-500">{portSummary.total}</span>
+            Start All
+          </button>
+          <button
+            className="rounded-full border border-zinc-300 bg-white/70 px-5 py-2 text-sm font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400"
+            onClick={handleStopAll}
+            disabled={loading || challenges.length === 0}
+          >
+            Stop All
+          </button>
         </div>
-      )}
+      </div>
       {progressLabel && (
         <div className="pointer-events-none fixed inset-x-0 top-16 z-50 flex justify-center px-4">
           <div className="toast-float pointer-events-auto w-full max-w-xl rounded-2xl border border-zinc-200 bg-white/80 px-4 py-3 text-sm text-zinc-600 shadow-lg backdrop-blur">
@@ -612,7 +695,7 @@ export default function Home() {
                 </label>
               </div>
               <button
-                className="w-full rounded-2xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
+                className="w-full rounded-2xl bg-[#1d1d1f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2a2a2c] disabled:opacity-60"
                 onClick={handleCreateChallenge}
                 disabled={loading}
               >
@@ -647,7 +730,7 @@ export default function Home() {
                 </span>
               </label>
               <button
-                className="w-full rounded-2xl border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:border-zinc-400"
+                className="w-full rounded-2xl bg-[#1d1d1f] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2a2a2c] disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={handleImport}
                 disabled={loading}
               >
