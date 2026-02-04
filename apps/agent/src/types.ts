@@ -9,6 +9,8 @@ export type PortRange = {
 export type Settings = {
   id: 1;
   port_ranges_json: string;
+  host: string;
+  host_scheme: "http" | "https";
   mysql_root_password: string;
   mysql_database: string;
   mysql_user: string;

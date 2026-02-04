@@ -20,9 +20,9 @@ export function initDb(dbPath: string): DbContext {
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   migrate(db);
-  ensureSettingsColumns(db);
+  const columns = ensureSettingsColumns(db);
   ensureSettings(db);
-  normalizeSettings(db);
+  normalizeSettings(db, columns);
   return { db };
 }
 
@@ -31,6 +31,8 @@ function migrate(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       port_ranges_json TEXT NOT NULL,
+      host TEXT,
+      host_scheme TEXT,
       mysql_root_password TEXT,
       mysql_database TEXT,
       mysql_user TEXT,
@@ -62,7 +64,7 @@ function migrate(db: Database.Database): void {
   `);
 }
 
-function ensureSettingsColumns(db: Database.Database): void {
+function ensureSettingsColumns(db: Database.Database): string[] {
   const columns = db
     .prepare("PRAGMA table_info(settings)")
     .all()
@@ -76,6 +78,9 @@ function ensureSettingsColumns(db: Database.Database): void {
   addColumn("mysql_database");
   addColumn("mysql_user");
   addColumn("mysql_password");
+  addColumn("host");
+  addColumn("host_scheme");
+  return columns;
 }
 
 function ensureSettings(db: Database.Database): void {
@@ -87,15 +92,19 @@ function ensureSettings(db: Database.Database): void {
       `INSERT INTO settings (
         id,
         port_ranges_json,
+        host,
+        host_scheme,
         mysql_root_password,
         mysql_database,
         mysql_user,
         mysql_password,
         created_at,
         updated_at
-      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       JSON.stringify(DEFAULT_PORT_RANGES),
+      "",
+      "http",
       mysqlRootPassword,
       DEFAULT_MYSQL_DATABASE,
       DEFAULT_MYSQL_USER,
@@ -106,9 +115,22 @@ function ensureSettings(db: Database.Database): void {
   }
 }
 
-function normalizeSettings(db: Database.Database): void {
+function normalizeSettings(db: Database.Database, columns: string[]): void {
   const current = getSettings(db);
   let changed = false;
+  let host = current.host;
+  if ((!host || host.trim() === "") && columns.includes("fqdn")) {
+    const legacy = db.prepare("SELECT fqdn FROM settings WHERE id = 1").get() as
+      | { fqdn?: string }
+      | undefined;
+    if (legacy?.fqdn) {
+      host = legacy.fqdn;
+      changed = true;
+    }
+  }
+  if (!host) {
+    host = "";
+  }
   let mysqlRootPassword = current.mysql_root_password;
   if (!mysqlRootPassword) {
     mysqlRootPassword = generatePassword();
@@ -129,17 +151,32 @@ function normalizeSettings(db: Database.Database): void {
     mysqlPassword = mysqlUser === "root" ? mysqlRootPassword : generatePassword();
     changed = true;
   }
+  let hostScheme = current.host_scheme;
+  if (hostScheme !== "http" && hostScheme !== "https") {
+    hostScheme = "http";
+    changed = true;
+  }
   if (changed) {
     const now = new Date().toISOString();
     db.prepare(
       `UPDATE settings SET
+        host = ?,
+        host_scheme = ?,
         mysql_root_password = ?,
         mysql_database = ?,
         mysql_user = ?,
         mysql_password = ?,
         updated_at = ?
       WHERE id = 1`
-    ).run(mysqlRootPassword, mysqlDatabase, mysqlUser, mysqlPassword, now);
+    ).run(
+      host,
+      hostScheme,
+      mysqlRootPassword,
+      mysqlDatabase,
+      mysqlUser,
+      mysqlPassword,
+      now
+    );
   }
 }
 
@@ -149,6 +186,8 @@ export function getSettings(db: Database.Database): Settings {
 
 export type SettingsUpdate = {
   portRanges?: PortRange[];
+  host?: string;
+  hostScheme?: "http" | "https";
   mysqlRootPassword?: string;
   mysqlDatabase?: string;
   mysqlUser?: string;
@@ -160,6 +199,8 @@ export function updateSettings(db: Database.Database, update: SettingsUpdate): S
   const portRangesJson = update.portRanges
     ? JSON.stringify(update.portRanges)
     : current.port_ranges_json;
+  const host = update.host ?? current.host ?? "";
+  const hostScheme = update.hostScheme ?? current.host_scheme ?? "http";
   const mysqlRootPassword = update.mysqlRootPassword ?? current.mysql_root_password;
   const mysqlDatabase = update.mysqlDatabase ?? current.mysql_database;
   const mysqlUser = update.mysqlUser ?? current.mysql_user;
@@ -168,6 +209,8 @@ export function updateSettings(db: Database.Database, update: SettingsUpdate): S
   db.prepare(
     `UPDATE settings SET
       port_ranges_json = ?,
+      host = ?,
+      host_scheme = ?,
       mysql_root_password = ?,
       mysql_database = ?,
       mysql_user = ?,
@@ -176,6 +219,8 @@ export function updateSettings(db: Database.Database, update: SettingsUpdate): S
      WHERE id = 1`
   ).run(
     portRangesJson,
+    host,
+    hostScheme,
     mysqlRootPassword,
     mysqlDatabase,
     mysqlUser,

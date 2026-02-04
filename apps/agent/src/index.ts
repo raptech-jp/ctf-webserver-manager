@@ -202,6 +202,8 @@ server.get("/settings", async () => {
   const settings = getSettings(db);
   return {
     port_ranges: JSON.parse(settings.port_ranges_json) as PortRange[],
+    host: settings.host ?? "",
+    host_scheme: settings.host_scheme ?? "http",
     mysql_root_password: settings.mysql_root_password,
     mysql_database: settings.mysql_database,
     mysql_user: settings.mysql_user,
@@ -210,27 +212,65 @@ server.get("/settings", async () => {
   };
 });
 
+server.get("/ports/summary", async (request, reply) => {
+  try {
+    const settings = getSettings(db);
+    const ranges = JSON.parse(settings.port_ranges_json) as PortRange[];
+    const total = ranges.reduce((sum, range) => sum + (range.end - range.start + 1), 0);
+    const usedPorts = new Set(listRunningInstances(db).map((instance) => instance.host_port));
+    let used = 0;
+    for (const port of usedPorts) {
+      if (ranges.some((range) => port >= range.start && port <= range.end)) {
+        used += 1;
+      }
+    }
+    const free = Math.max(total - used, 0);
+    reply.send({ total, free });
+  } catch (error) {
+    reply.status(500).send({ error: (error as Error).message });
+  }
+});
+
 server.put("/settings", async (request, reply) => {
   try {
     const body = request.body as {
       port_ranges?: unknown;
+      host?: unknown;
+      host_scheme?: unknown;
       mysql_root_password?: unknown;
       mysql_database?: unknown;
       mysql_user?: unknown;
       mysql_password?: unknown;
     };
     const hasPortRanges = typeof body?.port_ranges !== "undefined";
+    const hasHost = typeof body?.host !== "undefined";
+    const hasHostScheme = typeof body?.host_scheme !== "undefined";
     const hasMysql =
       typeof body?.mysql_root_password !== "undefined" ||
       typeof body?.mysql_database !== "undefined" ||
       typeof body?.mysql_user !== "undefined" ||
       typeof body?.mysql_password !== "undefined";
 
-    if (!hasPortRanges && !hasMysql) {
+    if (!hasPortRanges && !hasMysql && !hasHost && !hasHostScheme) {
       throw new Error("更新内容がありません");
     }
 
     const ranges = hasPortRanges ? parsePortRanges(body?.port_ranges) : undefined;
+    let host: string | undefined;
+    if (hasHost) {
+      if (typeof body?.host !== "string") {
+        throw new Error("Hostが不正です");
+      }
+      host = body.host.trim();
+    }
+
+    let hostScheme: "http" | "https" | undefined;
+    if (hasHostScheme) {
+      if (body.host_scheme !== "http" && body.host_scheme !== "https") {
+        throw new Error("Schemeが不正です");
+      }
+      hostScheme = body.host_scheme;
+    }
 
     let mysqlRootPassword: string | undefined;
     let mysqlDatabase: string | undefined;
@@ -256,6 +296,8 @@ server.put("/settings", async (request, reply) => {
 
     const settings = updateSettings(db, {
       portRanges: ranges,
+      host,
+      hostScheme,
       mysqlRootPassword,
       mysqlDatabase,
       mysqlUser,
@@ -263,6 +305,8 @@ server.put("/settings", async (request, reply) => {
     });
     reply.send({
       port_ranges: JSON.parse(settings.port_ranges_json),
+      host: settings.host ?? "",
+      host_scheme: settings.host_scheme ?? "http",
       mysql_root_password: settings.mysql_root_password,
       mysql_database: settings.mysql_database,
       mysql_user: settings.mysql_user,

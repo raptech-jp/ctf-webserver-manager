@@ -25,3 +25,39 @@ export async function findAvailablePort(ranges: PortRange[], reserved: Set<numbe
   }
   throw new Error("空きポートが見つかりませんでした");
 }
+
+function expandRanges(ranges: PortRange[]): number[] {
+  const ports: number[] = [];
+  for (const range of ranges) {
+    for (let port = range.start; port <= range.end; port += 1) {
+      ports.push(port);
+    }
+  }
+  return ports;
+}
+
+export async function getPortSummary(
+  ranges: PortRange[],
+  concurrency = 40
+): Promise<{ total: number; free: number }> {
+  const ports = expandRanges(ranges);
+  const total = ports.length;
+  if (total === 0) {
+    return { total: 0, free: 0 };
+  }
+  let index = 0;
+  let free = 0;
+
+  const workers = Array.from({ length: Math.min(concurrency, total) }, async () => {
+    while (index < total) {
+      const current = ports[index];
+      index += 1;
+      if (await isPortAvailable(current)) {
+        free += 1;
+      }
+    }
+  });
+
+  await Promise.all(workers);
+  return { total, free };
+}

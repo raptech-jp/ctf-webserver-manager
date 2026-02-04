@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import Link from "next/link";
 import { AGENT_URL } from "../lib/api";
@@ -57,6 +57,12 @@ export default function Home() {
   const [isChallengeDrag, setIsChallengeDrag] = useState(false);
   const [isImportDrag, setIsImportDrag] = useState(false);
   const [progressLabel, setProgressLabel] = useState<string | null>(null);
+  const [host, setHost] = useState("");
+  const [hostScheme, setHostScheme] = useState<"http" | "https">("http");
+  const [portSummary, setPortSummary] = useState<{ free: number; total: number } | null>(null);
+  const [toast, setToast] = useState<{ type: "error" | "notice"; message: string } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastShowRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [challengeForm, setChallengeForm] = useState<ChallengeForm>({
     name: "",
@@ -96,9 +102,60 @@ export default function Home() {
     await Promise.allSettled(data.map((challenge) => fetchDetail(challenge.id)));
   }, [fetchDetail]);
 
+  const fetchPortSummary = useCallback(async () => {
+    const response = await fetch(`${AGENT_URL}/ports/summary`);
+    if (!response.ok) {
+      throw new Error("ポート状況の取得に失敗しました");
+    }
+    const data = (await response.json()) as { free: number; total: number };
+    setPortSummary(data);
+  }, []);
+
   useEffect(() => {
     fetchChallenges().catch((err) => setError(err.message));
-  }, [fetchChallenges]);
+    fetchPortSummary().catch(() => undefined);
+  }, [fetchChallenges, fetchPortSummary]);
+
+  useEffect(() => {
+    fetch(`${AGENT_URL}/settings`)
+      .then((res) => res.json())
+      .then((data) => {
+        setHost(String(data.host ?? ""));
+        setHostScheme(data.host_scheme === "https" ? "https" : "http");
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const message = error ?? notice;
+    const type = error ? "error" : notice ? "notice" : null;
+    if (!message || !type) {
+      return;
+    }
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    if (toastShowRef.current) {
+      clearTimeout(toastShowRef.current);
+    }
+    setToast(null);
+    toastShowRef.current = setTimeout(() => {
+      setToast({ type, message });
+      toastTimerRef.current = setTimeout(() => {
+        setToast(null);
+        setError(null);
+        setNotice(null);
+      }, 2500);
+    }, 60);
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+      if (toastShowRef.current) {
+        clearTimeout(toastShowRef.current);
+      }
+    };
+  }, [error, notice]);
   const ensureDetail = useCallback(
     async (challengeId: string) => {
       if (details[challengeId]) {
@@ -155,6 +212,7 @@ export default function Home() {
       setChallengeForm((prev) => ({ ...prev, name: "", zip: null }));
       setNotice("Challengeを登録しました");
       await fetchChallenges();
+      await fetchPortSummary();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -215,6 +273,7 @@ export default function Home() {
       setImportZip(null);
       setNotice("インポートが完了しました");
       await fetchChallenges();
+      await fetchPortSummary();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -239,6 +298,7 @@ export default function Home() {
       }
       setNotice("インスタンスを起動しました");
       await fetchDetail(challengeId);
+      await fetchPortSummary();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -263,6 +323,7 @@ export default function Home() {
       }
       setNotice("停止しました");
       await fetchDetail(challengeId);
+      await fetchPortSummary();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -338,6 +399,7 @@ export default function Home() {
       }
       setNotice("Challengeを削除しました");
       await fetchChallenges();
+      await fetchPortSummary();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -346,8 +408,39 @@ export default function Home() {
     }
   };
 
+  const buildAccessUrl = (hostPort: number): string => {
+    const raw = host.trim();
+    const scheme = hostScheme === "https" ? "https" : "http";
+    if (!raw) {
+      return `${scheme}://127.0.0.1:${hostPort}/`;
+    }
+    try {
+      const hasScheme = raw.startsWith("http://") || raw.startsWith("https://");
+      const url = new URL(hasScheme ? raw : `${scheme}://${raw}`);
+      if (!url.port) {
+        url.port = String(hostPort);
+      }
+      url.pathname = "/";
+      url.hash = "";
+      url.search = "";
+      return url.toString();
+    } catch {
+      return `http://${raw}:${hostPort}/`;
+    }
+  };
+
   const handleOpen = (hostPort: number) => {
-    window.open(`http://127.0.0.1:${hostPort}/`, "_blank", "noopener,noreferrer");
+    window.open(buildAccessUrl(hostPort), "_blank", "noopener,noreferrer");
+  };
+
+  const handleCopyUrl = async (hostPort: number) => {
+    const url = buildAccessUrl(hostPort);
+    try {
+      await navigator.clipboard.writeText(url);
+      setNotice("URLをコピーしました");
+    } catch {
+      setError("URLのコピーに失敗しました");
+    }
   };
 
   return (
@@ -372,24 +465,45 @@ export default function Home() {
         </div>
       </header>
 
-      {error && (
-        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
+      {toast && (
+        <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+          <div
+            className={`toast-float pointer-events-auto rounded-2xl border px-4 py-3 text-sm shadow-lg backdrop-blur ${
+              toast.type === "error"
+                ? "border-red-200 bg-red-50/80 text-red-700"
+                : "border-emerald-200 bg-emerald-50/80 text-emerald-700"
+            }`}
+          >
+            {toast.message}
+          </div>
         </div>
       )}
-      {notice && (
-        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {notice}
+      {portSummary && (
+        <div className="mb-4 flex items-center gap-2 text-sm text-zinc-600">
+          <span className="text-xs uppercase tracking-widest text-zinc-400">Ports</span>
+          <span
+            className={`font-mono font-semibold ${
+              portSummary.total > 0 && portSummary.free / portSummary.total <= 0.1
+                ? "text-red-600"
+                : "text-zinc-500"
+            }`}
+          >
+            {portSummary.free}
+          </span>
+          <span className="text-zinc-400">/</span>
+          <span className="font-mono font-semibold text-zinc-500">{portSummary.total}</span>
         </div>
       )}
       {progressLabel && (
-        <div className="mb-6 rounded-2xl border border-zinc-200 bg-white/80 px-4 py-3 text-sm text-zinc-600">
-          <div className="flex items-center justify-between">
-            <span className="font-semibold">{progressLabel}</span>
-            <span className="text-xs text-zinc-400">Please wait</span>
-          </div>
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-200">
-            <div className="progress-bar h-full w-1/3 bg-zinc-900" />
+        <div className="pointer-events-none fixed inset-x-0 top-16 z-50 flex justify-center px-4">
+          <div className="toast-float pointer-events-auto w-full max-w-xl rounded-2xl border border-zinc-200 bg-white/80 px-4 py-3 text-sm text-zinc-600 shadow-lg backdrop-blur">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold">{progressLabel}</span>
+              <span className="text-xs text-zinc-400">Please wait</span>
+            </div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-200">
+              <div className="progress-bar h-full w-1/3 bg-zinc-900" />
+            </div>
           </div>
         </div>
       )}
@@ -581,61 +695,76 @@ export default function Home() {
                           {statusLabel} · {portLabel}
                         </p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-semibold text-zinc-600 hover:border-zinc-400"
-                          onClick={() => handleStart(challenge.id)}
-                          disabled={loading || instance?.status === "running"}
-                        >
-                          Start
-                        </button>
-                        <button
-                          className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-semibold text-zinc-600 hover:border-zinc-400"
-                          onClick={() => handleLogs(challenge.id)}
-                          disabled={loading || !instance}
-                        >
-                          Logs
-                        </button>
-                        <button
-                          className={`rounded-full border border-zinc-300 px-3 py-1 text-xs font-semibold transition ${
-                            openDisabled
-                              ? "cursor-not-allowed text-zinc-300"
-                              : "text-zinc-600 hover:border-zinc-400"
-                          }`}
-                          onClick={() => instance && handleOpen(instance.host_port)}
-                          disabled={openDisabled}
-                        >
-                          Open
-                        </button>
-                        <button
-                          className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-semibold text-zinc-600 hover:border-zinc-400"
-                          onClick={() => handleStop(challenge.id)}
-                          disabled={loading || !instance || instance.status !== "running"}
-                        >
-                          Stop
-                        </button>
-                        <button
-                          className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-semibold text-zinc-600 hover:border-zinc-400"
-                          onClick={() => handleExport(challenge.id)}
-                          disabled={loading}
-                        >
-                          Export
-                        </button>
-                        <button
-                          className="rounded-full border border-red-200 px-3 py-1 text-xs font-semibold text-red-500 hover:border-red-300"
-                          onClick={() => handleDeleteChallenge(challenge.id)}
-                          disabled={loading}
-                        >
-                          Delete Challenge
-                        </button>
+                      <div className="flex flex-col items-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <button
+                            className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-semibold text-zinc-600 hover:border-zinc-400"
+                            onClick={() => handleStart(challenge.id)}
+                            disabled={loading || instance?.status === "running"}
+                          >
+                            Start
+                          </button>
+                          <button
+                            className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-semibold text-zinc-600 hover:border-zinc-400"
+                            onClick={() => handleLogs(challenge.id)}
+                            disabled={loading || !instance}
+                          >
+                            Logs
+                          </button>
+                          <button
+                            className={`rounded-full border border-zinc-300 px-3 py-1 text-xs font-semibold transition ${
+                              openDisabled
+                                ? "cursor-not-allowed text-zinc-300"
+                                : "text-zinc-600 hover:border-zinc-400"
+                            }`}
+                            onClick={() => instance && handleOpen(instance.host_port)}
+                            disabled={openDisabled}
+                          >
+                            Open
+                          </button>
+                          <button
+                            className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-semibold text-zinc-600 hover:border-zinc-400"
+                            onClick={() => handleStop(challenge.id)}
+                            disabled={loading || !instance || instance.status !== "running"}
+                          >
+                            Stop
+                          </button>
+                          <button
+                            className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-semibold text-zinc-600 hover:border-zinc-400"
+                            onClick={() => handleExport(challenge.id)}
+                            disabled={loading}
+                          >
+                            Export
+                          </button>
+                          <button
+                            className="rounded-full border border-red-200 px-3 py-1 text-xs font-semibold text-red-500 hover:border-red-300"
+                            onClick={() => handleDeleteChallenge(challenge.id)}
+                            disabled={loading}
+                          >
+                            Delete Challenge
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            title="URLをコピー"
+                            aria-label="URLをコピー"
+                            className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold transition ${
+                              openDisabled
+                                ? "cursor-not-allowed border-zinc-200 text-zinc-300"
+                                : "border-zinc-300 text-zinc-600 hover:border-zinc-400"
+                            }`}
+                            onClick={() => instance && handleCopyUrl(instance.host_port)}
+                            disabled={openDisabled}
+                          >
+                            <span className="text-base">⧉</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
                 );
               })}
-            </div>
-            <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/70 px-4 py-3 text-xs text-zinc-500">
-              スタート後は <span className="font-mono">http://127.0.0.1:&lt;port&gt;/</span> を開きます。
             </div>
           </div>
         </section>

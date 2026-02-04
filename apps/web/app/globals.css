@@ -46,3 +46,18 @@ body {
 .progress-bar {
   animation: progress-slide 1.2s ease-in-out infinite;
 }
+
+@keyframes toast-float-in {
+  0% {
+    transform: translateY(-12px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.toast-float {
+  animation: toast-float-in 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
