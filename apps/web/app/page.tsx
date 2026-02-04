@@ -56,6 +56,7 @@ export default function Home() {
   const [logsText, setLogsText] = useState("");
   const [isChallengeDrag, setIsChallengeDrag] = useState(false);
   const [isImportDrag, setIsImportDrag] = useState(false);
+  const [progressLabel, setProgressLabel] = useState<string | null>(null);
 
   const [challengeForm, setChallengeForm] = useState<ChallengeForm>({
     name: "",
@@ -224,6 +225,7 @@ export default function Home() {
   const handleStart = async (challengeId: string) => {
     setError(null);
     setNotice(null);
+    setProgressLabel("起動中...");
     setLoading(true);
     try {
       const response = await fetch(`${AGENT_URL}/instances`, {
@@ -241,12 +243,14 @@ export default function Home() {
       setError((err as Error).message);
     } finally {
       setLoading(false);
+      setProgressLabel(null);
     }
   };
 
   const handleStop = async (challengeId: string) => {
     setError(null);
     setNotice(null);
+    setProgressLabel("停止中...");
     setLoading(true);
     try {
       const instance = await ensureInstance(challengeId);
@@ -263,6 +267,7 @@ export default function Home() {
       setError((err as Error).message);
     } finally {
       setLoading(false);
+      setProgressLabel(null);
     }
   };
 
@@ -321,6 +326,7 @@ export default function Home() {
     }
     setError(null);
     setNotice(null);
+    setProgressLabel("削除中...");
     setLoading(true);
     try {
       const response = await fetch(`${AGENT_URL}/challenges/${challengeId}`, {
@@ -336,6 +342,7 @@ export default function Home() {
       setError((err as Error).message);
     } finally {
       setLoading(false);
+      setProgressLabel(null);
     }
   };
 
@@ -373,6 +380,17 @@ export default function Home() {
       {notice && (
         <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
           {notice}
+        </div>
+      )}
+      {progressLabel && (
+        <div className="mb-6 rounded-2xl border border-zinc-200 bg-white/80 px-4 py-3 text-sm text-zinc-600">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold">{progressLabel}</span>
+            <span className="text-xs text-zinc-400">Please wait</span>
+          </div>
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-200">
+            <div className="progress-bar h-full w-1/3 bg-zinc-900" />
+          </div>
         </div>
       )}
 
